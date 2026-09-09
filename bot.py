@@ -1,36 +1,32 @@
+import os
 import asyncio
-from aiogram import Bot, Dispatcher, F
+from aiohttp import web
+from aiogram import Bot, Dispatcher
 from aiogram.types import Message, BusinessMessagesDeleted
 
-# Вставьте сюда токен бота из @BotFather
+# 1. Вставьте ваши данные сюда
 BOT_TOKEN = "1954489124:AAGOQjJcZdb5Ei6Wps6cgHIiX7uXYY6AGII"
-
-# Вставьте ваш числовой Telegram ID (узнать можно у бота @userinfobot)
-# Сюда будут приходить уведомления об удаленных сообщениях
-YOUR_CHAT_ID = 850863512
+YOUR_CHAT_ID = 850863512  # Ваш числовой ID из @userinfobot
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Временное хранилище сообщений: {message_id: (sender_id, text/caption)}
+# Временное хранилище сообщений: {message_id: (sender, text, chat_id)}
 saved_messages = {}
 
-
-# Обработчик новых сообщений из бизнес-подключения
+# Хэндлер входящих бизнес-сообщений
 @dp.business_message()
 async def on_business_message(message: Message):
     sender = message.from_user.full_name if message.from_user else "Собеседник"
     text = message.text or message.caption or "[Медиафайл без подписи]"
-
-    # Сохраняем сообщение в памяти
+    
     saved_messages[message.message_id] = {
         "sender": sender,
         "text": text,
         "chat_id": message.chat.id
     }
 
-
-# Обработчик удалений сообщений
+# Хэндлер удаления сообщений
 @dp.business_messages_deleted()
 async def on_messages_deleted(event: BusinessMessagesDeleted):
     for msg_id in event.message_ids:
@@ -42,14 +38,25 @@ async def on_messages_deleted(event: BusinessMessagesDeleted):
                 f"💬 **Текст:**\n{cached['text']}"
             )
             await bot.send_message(chat_id=YOUR_CHAT_ID, text=alert, parse_mode="Markdown")
-            # Очищаем память
             del saved_messages[msg_id]
 
+# Веб-сервер для прохождения проверки портов Render
+async def health_check(request):
+    return web.Response(text="Bot is running!")
 
 async def main():
-    print("Бизнес-бот запущен и слушает удаленные сообщения...")
-    await dp.start_polling(bot)
+    # Запуск микро-сервера
+    app = web.Application()
+    app.router.add_get("/", health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
 
+    # Запуск прослушивания Telegram
+    print("Бот запущен и слушает события...")
+    await dp.start_polling(bot)
 
 if name == "__main__":
     asyncio.run(main())
